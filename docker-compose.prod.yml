@@ -37,14 +37,17 @@ services:
 
   # --- Cloudflare Tunnel (cloudflared) ---------------------------------------
   # Connects the Pi OUTBOUND to Cloudflare's edge so resume.axlothecook.com reaches
-  # the frontend (and api.resume.axlothecook.com reaches the backend) — no open
-  # ports / no static IP needed. Routing (hostname -> service) is configured in the
-  # Cloudflare Zero Trust dashboard ("dashboard-managed" tunnel); the container only
-  # needs the tunnel TOKEN. In the dashboard add TWO public hostnames on THIS tunnel:
-  #   resume.axlothecook.com      -> HTTP -> frontend:80
-  #   resume-api.axlothecook.com  -> HTTP -> backend:3006
-  # (resume-api is ONE level deep so it's covered by Cloudflare's *.axlothecook.com
-  #  Universal SSL cert; a two-level api.resume.* would have no edge cert.)
+  # the frontend — no open ports / no static IP needed. Routing (hostname -> service)
+  # is configured in the Cloudflare Zero Trust dashboard ("dashboard-managed" tunnel);
+  # the container only needs the tunnel TOKEN. In the dashboard add just ONE public
+  # hostname on THIS tunnel:
+  #   resume.axlothecook.com  -> HTTP -> frontend:80
+  # The API is NOT a separate hostname anymore: the SPA calls it at
+  # resume.axlothecook.com/api, and nginx (in the frontend container) reverse-proxies
+  # /api -> backend:3006. Same origin → first-party SameSite=Lax session cookie that
+  # strict browsers don't block (the old resume-api.* subdomain made it cross-site and
+  # broke login on some phones). The old resume-api.axlothecook.com hostname can be
+  # deleted from the tunnel's public-hostname list.
   # (Services are reached by their SERVICE NAME over the internal Compose network.)
   cloudflared:
     image: cloudflare/cloudflared:latest

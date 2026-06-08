@@ -1,7 +1,7 @@
 # Create_Resume — Deploy to the Raspberry Pi
 
 > ✅ **STATUS: LIVE.** Deployed and verified end-to-end on 2026-06-08.
-> Site: <https://resume.axlothecook.com> · API: <https://resume-api.axlothecook.com>
+> Site: <https://resume.axlothecook.com> · API: <https://resume.axlothecook.com/api> (same origin, nginx-proxied)
 > For a plain-language walkthrough of the whole system, read **`ARCHITECTURE.md`**
 > (in this folder) first — this file is the operational reference / runbook.
 
@@ -24,7 +24,7 @@ Tailscale CI-to-Pi channel, same GHCR account). Differences are called out below
         │
         ▼
   Cloudflare Tunnel ──▶ resume.axlothecook.com  → frontend:80
-                        resume-api.axlothecook.com → backend:3006
+                        (nginx serves the SPA and proxies /api → backend:3006)
 ```
 
 ## What differs from gaming-shop
@@ -32,20 +32,24 @@ Tailscale CI-to-Pi channel, same GHCR account). Differences are called out below
 - **Frontend is a static SPA**, not a SvelteKit node server. Its Dockerfile is
   multi-stage `node build → nginx`; the final container runs nginx, not `node`.
 - **API base URL is build-time** (`VITE_API_URL`, baked by Vite) — set as a build
-  arg in the frontend workflow, pointing at `https://resume-api.axlothecook.com`.
+  arg in the frontend workflow to the relative path **`/api`** (same-origin; nginx
+  proxies it to the backend).
 - **No R2 / object storage** — résumés are JSON in Mongo; the only image (auth bg)
   is bundled into the frontend build. The backend needs no storage keys.
 - **Own tunnel + own network** — fully isolated from the gaming-shop stack.
-- **Two public hostnames** (frontend + API) because the SPA calls the API
-  cross-origin (gaming-shop's SvelteKit proxied server-side, so it needed only one).
+- **ONE public hostname** (`resume.*`). The API is the `/api` path on the same host,
+  reverse-proxied by the frontend's nginx to `backend:3006` — so it's same-origin
+  (first-party `SameSite=Lax` cookie), like gaming-shop's server-side proxy.
 
 ## Backend production config (already in code — no changes needed)
 
 `app.js` / `createApp.js` are env-driven:
-- `NODE_ENV=production` → `secureCookie: true` (HTTPS-only `SameSite=None` cookie) +
-  `trustProxy: true` (correct behind the Cloudflare Tunnel).
+- `NODE_ENV=production` → `secureCookie: true` (HTTPS-only `SameSite=Lax` cookie;
+  same-origin now, so Lax not None) + `trustProxy: true` (correct behind the
+  Cloudflare Tunnel + the frontend nginx proxy).
 - `MONGO_URI=mongodb://mongo:27017/create_resume` (service name, not localhost).
-- `CLIENT_ORIGIN=https://resume.axlothecook.com` → the CORS allow-list.
+- `CLIENT_ORIGIN=https://resume.axlothecook.com` → the CORS allow-list (harmless now
+  that requests are same-origin; kept for safety).
 - `SESSION_SECRET` → sign the session cookie (generate a long random value).
 - `PORT=3006`.
 
@@ -67,10 +71,13 @@ Same values as gaming-shop — the Pi + tailnet + deploy key are shared:
 
 1. Zero Trust → Networks → Tunnels → **Create a tunnel** (separate from gaming-shop's
    `axlothecook-pi`). Copy its **token** → into the Pi `.env` as `TUNNEL_TOKEN`.
-2. Add two **Public Hostnames** on this tunnel (Service Type **HTTP**, URL =
+2. Add ONE **Public Hostname** on this tunnel (Service Type **HTTP**, URL =
    `host:port` with **no scheme**):
    - `resume.axlothecook.com` → `frontend:80`
-   - `resume-api.axlothecook.com` → `backend:3006`
+   - The API needs NO separate hostname: the frontend's nginx proxies `/api` →
+     `backend:3006` internally (same origin → first-party cookie).
+   - If a `resume-api.axlothecook.com` hostname from the old setup still exists,
+     **delete it** (and its orphaned DNS CNAME) — it's no longer used.
    - GOTCHA (from gaming-shop): if you get "record already exists", delete the
      orphaned CNAME in the DNS tab, then re-save the route.
 

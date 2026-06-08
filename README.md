@@ -35,13 +35,16 @@ docker compose -f docker-compose.prod.yml up -d
 
 ## Cloudflare Tunnel routes (Zero Trust dashboard)
 
-On **this project's own tunnel**, add two Public Hostnames (Service Type = HTTP, URL
+On **this project's own tunnel**, add ONE Public Hostname (Service Type = HTTP, URL
 = `host:port` with NO scheme):
 
 | Hostname | Service |
 |----------|---------|
 | `resume.axlothecook.com` | `frontend:80` |
-| `resume-api.axlothecook.com` | `backend:3006` |
+
+The API has no separate hostname: the frontend's nginx reverse-proxies
+`resume.axlothecook.com/api` → `backend:3006` internally (same origin → first-party
+session cookie). If an old `resume-api.axlothecook.com` route still exists, delete it.
 
 ## Updating
 

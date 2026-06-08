@@ -3,7 +3,7 @@
 A plain-language tour of the whole system, written so you can re-read it later and
 understand every moving part. Start here; `DEPLOY.md` is the step-by-step runbook.
 
-**Live:** <https://resume.axlothecook.com> · **API:** <https://resume-api.axlothecook.com>
+**Live:** <https://resume.axlothecook.com> · **API:** <https://resume.axlothecook.com/api> (same origin, reverse-proxied)
 
 ---
 
@@ -12,26 +12,26 @@ understand every moving part. Start here; `DEPLOY.md` is the step-by-step runboo
 ```
    Your phone / laptop browser
             │
-            │  (1) loads the website            (2) the website's JS calls the API
-            ▼                                              │
-   resume.axlothecook.com                       resume-api.axlothecook.com
-            │                                              │
-            └──────────────┬───────────────────────────────┘
-                           ▼
+            │  loads the site AND calls the API — both on ONE domain
+            ▼
+   resume.axlothecook.com   (the page; the API is the /api path on the same host)
+            │
+            ▼
                   Cloudflare's edge  (free HTTPS, hides the home IP)
                            │
-                           │  one secure OUTBOUND tunnel
+                           │  one secure OUTBOUND tunnel  (one hostname)
                            ▼
                 ┌──────────────────────────────────────────┐
                 │  Raspberry Pi  (at home)                  │
                 │                                           │
-                │  cloudflared ── routes by hostname ──┐    │
-                │       resume.* ──▶ frontend (nginx :80)   │
-                │   resume-api.* ──▶ backend (Express :3006)│
-                │                          │                │
-                │                          ▼                │
-                │                       mongo :27017        │
-                │                    (data on a volume)     │
+                │  cloudflared ── resume.* ──▶ frontend (nginx :80)
+                │                                  │        │
+                │                 nginx serves the SPA, and │
+                │                 proxies /api ──▶ backend (Express :3006)
+                │                                  │        │
+                │                                  ▼        │
+                │                               mongo :27017│
+                │                            (data on a volume)
                 └──────────────────────────────────────────┘
 ```
 
@@ -64,9 +64,11 @@ be public and cloned straight onto the Pi.
    the request down the tunnel to the Pi's **frontend** container (nginx), which
    returns the static React app (HTML/JS/CSS).
 2. The React app runs in your browser. When you click **Save**, its JavaScript makes
-   a `fetch()` to **resume-api.axlothecook.com** (the API base URL was baked into the
-   build — see §5).
-3. Cloudflare forwards that to the Pi's **backend** container (Express on :3006).
+   a `fetch()` to **resume.axlothecook.com/api/...** — the SAME domain as the page
+   (the base URL `/api` was baked into the build — see §5).
+3. Cloudflare forwards that to the Pi's **frontend** container; nginx sees the `/api`
+   prefix and reverse-proxies the request to the **backend** container (Express :3006),
+   stripping `/api` so the backend sees `/auth/login`, `/resumes`, etc.
 4. The backend checks your **session cookie**, then writes the résumé JSON to the
    **mongo** container.
 5. The response (and a refreshed session cookie) travels back out through the tunnel
@@ -98,30 +100,48 @@ Both run on the same Pi with the same pipeline, but two design points differ:
    Dockerfile is multi-stage: stage 1 runs `npm run build` (Vite → `dist/`), stage 2
    is just nginx copying that `dist/` in. Smaller, simpler, no Node at runtime.
 
-2. **The API URL is baked in at BUILD time.** A static SPA has no server to proxy API
-   calls through, so the browser calls the API directly. The address
-   (`https://resume-api.axlothecook.com`) is compiled into the JS bundle via the
-   `VITE_API_URL` build arg (set in the frontend's CI workflow). That's why a change
-   to the API domain requires a *rebuild*, not just a restart. This also means the
-   frontend and backend are on **two subdomains** and talk **cross-origin**, which is
-   why the backend sets CORS (`CLIENT_ORIGIN`) + a `SameSite=None; Secure` cookie.
+2. **The API URL is baked in at BUILD time — and it's a same-origin path.** A static
+   SPA has no server of its own, so the API address is compiled into the JS bundle via
+   the `VITE_API_URL` build arg (set in the frontend's CI workflow). We set it to the
+   **relative path `/api`**, so the browser calls the API on the *same* origin as the
+   page; nginx (in the frontend container) reverse-proxies `/api` to the backend.
+   Because page and API share one origin, the session cookie is **first-party**
+   (`SameSite=Lax`) — no CORS needed, and strict browsers don't block it. A change to
+   this path still requires a *rebuild* (it's baked in), not just a restart.
 
 ---
 
-## 6. The TLS gotcha we hit (and why the API is `resume-api`, not `api.resume`)
+## 6. Two gotchas about the API's address (history + the current design)
 
-We first tried `api.resume.axlothecook.com` for the API. It failed the TLS handshake.
+### 6a. Why the API is now a same-origin `/api` path (the cross-site-cookie fix)
 
-**Why:** Cloudflare's *free* Universal SSL certificate covers the apex and **one**
-level of subdomain (`*.axlothecook.com`). `resume.axlothecook.com` is one level → fine.
-But `api.resume.axlothecook.com` is **two** levels (`*.resume.axlothecook.com`), which
-the free wildcard does **not** cover → no edge certificate → browsers reject the
-connection.
+Originally the API lived on its **own subdomain**, `resume-api.axlothecook.com`,
+separate from the page on `resume.axlothecook.com`. That made the login session cookie
+a **third-party / cross-site cookie** (it had to be `SameSite=None; Secure`). Browsers
+with cross-site-tracking protection on — Safari/iOS, Brave, Firefox, increasingly
+Chrome — **silently drop** such cookies (or the whole request), so login failed with a
+raw `Failed to fetch` on some phones while working fine on permissive devices. It
+looked like a per-device bug; it was really the split-domain architecture.
 
-**Fix:** use a one-level name — **`resume-api.axlothecook.com`** — which the wildcard
-covers. (The alternative, a paid Advanced Certificate for the 2-level name, wasn't
-worth it.) Lesson for future projects: **keep public subdomains one level deep** on
-the free Cloudflare plan.
+**Fix:** serve the API as a **path of the same domain** — `resume.axlothecook.com/api`
+— with nginx reverse-proxying `/api` → `backend:3006`. Same origin → the cookie is
+**first-party** (`SameSite=Lax`, the safe default) → no browser blocks it, and CORS is
+no longer needed. **Lesson for future projects: for cookie/session auth, keep the
+frontend and backend on the SAME origin (an `/api` path), never on separate subdomains.**
+
+One proxy detail that matters: nginx forwards the browser's original scheme to the
+backend via `X-Forwarded-Proto` (defaulting to `https`), so the backend — which trusts
+the proxy — still marks the cookie `Secure`. Without that, the backend would see the
+internal HTTP hop and refuse the Secure cookie.
+
+### 6b. (Historical) the TLS gotcha that shaped the OLD subdomain name
+
+When the API *was* a subdomain, we first tried `api.resume.axlothecook.com` and it
+failed the TLS handshake: Cloudflare's *free* Universal SSL covers only **one** level
+of subdomain (`*.axlothecook.com`), not two (`*.resume.axlothecook.com`). We worked
+around it with the one-level `resume-api.axlothecook.com`. The same-origin `/api`
+design in §6a makes this moot (there's no second public hostname now), but the rule
+still holds for any *other* public subdomain on the free plan: **keep it one level deep.**
 
 ---
 
