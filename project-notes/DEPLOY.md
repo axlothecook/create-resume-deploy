@@ -109,9 +109,24 @@ docker compose -f docker-compose.prod.yml restart frontend # restart one service
 To ship a change: just `git push` to `main` in the frontend or backend repo — CI
 rebuilds the image and rolls the Pi automatically (no manual step).
 
-## Backup (recommended, mirrors gaming-shop)
+## Backup (✅ DONE 2026-06-08 — 2-tier, verified restorable, mirrors gaming-shop)
 
-Add a nightly Pi cron `mongodump --archive --gzip` of the `create_resume` DB into
-`~/create-resume-backups/` (keep last ~5–14), and extend the PC-side
-`pull-pi-backups.ps1` to scp these too. Résumé data is the only thing not
-reproducible from git, so it's the one thing that must be backed up.
+Résumé data is the only thing not reproducible from git, so it's the one thing that
+must be backed up. Two tiers:
+- **Tier 1 (Pi, cron 22:15 daily):** `~/backup-create-resume.sh` → `mongodump
+  --db=create_resume --archive --gzip` of container `create-resume-deploy-mongo-1`
+  → `~/create-resume-backups/create-resume-<stamp>.archive.gz`, 5-day rotation.
+- **Tier 2 (off the Pi → owner's PC, Windows Task Scheduler 23:00):** the shared
+  `pull-pi-backups.ps1` scp's the archives to `create-resume-backup-files/`.
+- Verified restorable: `mongorestore --gzip --archive=<file>` → counts matched
+  (4 users / 1 résumé / 9 sessions). No off-SITE copy (accepted, demo).
+
+## Monitoring (✅ DONE 2026-06-08 — external uptime check)
+
+UptimeRobot (free tier) externally pings the app and emails on downtime — external
+so it catches Pi-down / tunnel-down / ISP-down, not just an app crash.
+- **Monitor:** Keyword type, URL `https://resume.axlothecook.com/api/`, keyword
+  `create-resume-backend`, alert when the keyword is ABSENT (the API health route
+  returns `{"ok":true,"service":"create-resume-backend"}` only when the whole chain
+  — tunnel → nginx → backend — is up). 5-minute interval, email alert.
+- **Public status page:** https://stats.uptimerobot.com/Zk69Y617Py
