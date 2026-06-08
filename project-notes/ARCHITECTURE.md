@@ -143,6 +143,32 @@ around it with the one-level `resume-api.axlothecook.com`. The same-origin `/api
 design in §6a makes this moot (there's no second public hostname now), but the rule
 still holds for any *other* public subdomain on the free plan: **keep it one level deep.**
 
+### 6c. Why moving the API needed NO Cloudflare change
+
+A natural question: "if the API moved from `resume-api.*` to `resume.*/api`, why didn't
+I have to change anything in the Cloudflare dashboard?" Because **Cloudflare routes by
+HOSTNAME, not by path** — and the hostname it needs (`resume.axlothecook.com`) was
+already pointed at the Pi from day one.
+
+- Cloudflare's tunnel route `resume.axlothecook.com → frontend:80` forwards the
+  **entire** request — whatever the path: `/`, `/assets/...`, or `/api/auth/login` —
+  down to the nginx (frontend) container. Cloudflare neither inspects nor cares about
+  the `/api` part. So `/api` requests were *already arriving* at nginx; there was just
+  nothing handling them before.
+- The actual move happened **inside the Pi**, below Cloudflare's view, in two places we
+  ship via the normal `git push → CI → Pi` pipeline (no dashboard edit):
+  1. **nginx config** gained `location /api/ { proxy_pass http://backend:3006/; }` —
+     so nginx now forwards `/api` traffic to the backend. `backend:3006` is an
+     *internal* Docker network name that only exists inside the Pi; Cloudflare can't
+     see or route to it.
+  2. **the frontend build** changed `VITE_API_URL` to `/api`, so the SPA now *calls*
+     `resume.axlothecook.com/api/...` (same domain) instead of the old subdomain.
+- The OLD design is the only reason Cloudflare ever had an API entry: it needed a
+  SECOND hostname route (`resume-api.* → backend:3006`) to reach the backend directly,
+  bypassing nginx. That route is now **unused** — which is why the sole remaining
+  Cloudflare task is the *optional* deletion of it (see DEPLOY.md). The new design needs
+  just the one `resume.*` route that already existed.
+
 ---
 
 ## 7. CI/CD — how a code change reaches production
