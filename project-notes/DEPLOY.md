@@ -1,5 +1,10 @@
 # Create_Resume — Deploy to the Raspberry Pi
 
+> ✅ **STATUS: LIVE.** Deployed and verified end-to-end on 2026-06-08.
+> Site: <https://resume.axlothecook.com> · API: <https://resume-api.axlothecook.com>
+> For a plain-language walkthrough of the whole system, read **`ARCHITECTURE.md`**
+> (in this folder) first — this file is the operational reference / runbook.
+
 This mirrors the gaming-shop deploy (same Pi, same domain `axlothecook.com`, same
 Tailscale CI-to-Pi channel, same GHCR account). Differences are called out below.
 
@@ -69,17 +74,33 @@ Same values as gaming-shop — the Pi + tailnet + deploy key are shared:
    - GOTCHA (from gaming-shop): if you get "record already exists", delete the
      orphaned CNAME in the DNS tab, then re-save the route.
 
-## First bring-up checklist
+## First bring-up checklist — ✅ ALL DONE (2026-06-08)
 
-- [ ] Push both app repos to `main` once so CI builds + pushes the images to GHCR
-      (or build/push manually). The Pi can only `pull` images that already exist.
-- [ ] Add the 5 GitHub secrets to BOTH repos.
-- [ ] Create the new Cloudflare tunnel + the two hostname routes.
-- [ ] `git clone` this repo to `~/create-resume-deploy` on the Pi.
-- [ ] `cp .env.example .env` on the Pi; set `SESSION_SECRET` + `TUNNEL_TOKEN`.
-- [ ] `docker compose -f docker-compose.prod.yml pull && up -d`.
-- [ ] Visit `https://resume.axlothecook.com` — sign up, save a résumé, reload to
-      confirm the session cookie + save round-trip work end to end.
+- [x] Push both app repos to `main` so CI builds + pushes the images to GHCR.
+- [x] Add the 5 GitHub secrets to BOTH repos.
+- [x] Create the Cloudflare tunnel (`axlothecook-resume`) + the two hostname routes.
+- [x] `git clone` this repo to `~/create-resume-deploy` on the Pi.
+- [x] `cp .env.example .env` on the Pi; set `SESSION_SECRET` + `TUNNEL_TOKEN`.
+- [x] `docker compose -f docker-compose.prod.yml pull && up -d` — 4 containers up.
+- [x] Verified: frontend 200, API 200, CORS ok, signup + session round-trip works,
+      CI auto-deploy (push → build → Pi) proven on both repos.
+
+### Day-2 operations (how to run things now it's live)
+
+```sh
+# SSH to the Pi (over Tailscale)
+ssh -i ~/.ssh/gameshop_ci_key axel@100.97.123.51
+
+# from ~/create-resume-deploy on the Pi:
+docker compose -f docker-compose.prod.yml ps              # container status
+docker compose -f docker-compose.prod.yml logs -f backend # follow a service's logs
+docker compose -f docker-compose.prod.yml pull && \
+  docker compose -f docker-compose.prod.yml up -d          # manual update (CI also does this)
+docker compose -f docker-compose.prod.yml restart frontend # restart one service
+```
+
+To ship a change: just `git push` to `main` in the frontend or backend repo — CI
+rebuilds the image and rolls the Pi automatically (no manual step).
 
 ## Backup (recommended, mirrors gaming-shop)
 
