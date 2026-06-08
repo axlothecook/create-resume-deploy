@@ -19,7 +19,7 @@ Tailscale CI-to-Pi channel, same GHCR account). Differences are called out below
         │
         ▼
   Cloudflare Tunnel ──▶ resume.axlothecook.com  → frontend:80
-                        api.resume.axlothecook.com → backend:3006
+                        resume-api.axlothecook.com → backend:3006
 ```
 
 ## What differs from gaming-shop
@@ -27,7 +27,7 @@ Tailscale CI-to-Pi channel, same GHCR account). Differences are called out below
 - **Frontend is a static SPA**, not a SvelteKit node server. Its Dockerfile is
   multi-stage `node build → nginx`; the final container runs nginx, not `node`.
 - **API base URL is build-time** (`VITE_API_URL`, baked by Vite) — set as a build
-  arg in the frontend workflow, pointing at `https://api.resume.axlothecook.com`.
+  arg in the frontend workflow, pointing at `https://resume-api.axlothecook.com`.
 - **No R2 / object storage** — résumés are JSON in Mongo; the only image (auth bg)
   is bundled into the frontend build. The backend needs no storage keys.
 - **Own tunnel + own network** — fully isolated from the gaming-shop stack.
@@ -65,7 +65,7 @@ Same values as gaming-shop — the Pi + tailnet + deploy key are shared:
 2. Add two **Public Hostnames** on this tunnel (Service Type **HTTP**, URL =
    `host:port` with **no scheme**):
    - `resume.axlothecook.com` → `frontend:80`
-   - `api.resume.axlothecook.com` → `backend:3006`
+   - `resume-api.axlothecook.com` → `backend:3006`
    - GOTCHA (from gaming-shop): if you get "record already exists", delete the
      orphaned CNAME in the DNS tab, then re-save the route.
 

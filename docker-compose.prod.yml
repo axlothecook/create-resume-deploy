@@ -42,7 +42,9 @@ services:
   # Cloudflare Zero Trust dashboard ("dashboard-managed" tunnel); the container only
   # needs the tunnel TOKEN. In the dashboard add TWO public hostnames on THIS tunnel:
   #   resume.axlothecook.com      -> HTTP -> frontend:80
-  #   api.resume.axlothecook.com  -> HTTP -> backend:3006
+  #   resume-api.axlothecook.com  -> HTTP -> backend:3006
+  # (resume-api is ONE level deep so it's covered by Cloudflare's *.axlothecook.com
+  #  Universal SSL cert; a two-level api.resume.* would have no edge cert.)
   # (Services are reached by their SERVICE NAME over the internal Compose network.)
   cloudflared:
     image: cloudflare/cloudflared:latest

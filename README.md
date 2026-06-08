@@ -41,7 +41,7 @@ On **this project's own tunnel**, add two Public Hostnames (Service Type = HTTP,
 | Hostname | Service |
 |----------|---------|
 | `resume.axlothecook.com` | `frontend:80` |
-| `api.resume.axlothecook.com` | `backend:3006` |
+| `resume-api.axlothecook.com` | `backend:3006` |
 
 ## Updating
 
