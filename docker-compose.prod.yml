@@ -1,0 +1,62 @@
+# Create_Resume — PRODUCTION stack (the Raspberry Pi).
+# Pulls pre-built images from GHCR — does NOT build anything on the Pi.
+# The CI pipeline (GitHub Actions) builds + pushes the images; the Pi only pulls.
+#
+# Run on the Pi from this folder with:
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# This stack is fully self-contained and on its OWN Compose network + its OWN
+# Cloudflare Tunnel — it shares nothing with the gaming-shop stack on the same Pi.
+
+services:
+  # --- MongoDB ---------------------------------------------------------------
+  mongo:
+    image: mongo:8                       # official MongoDB image, from Docker Hub
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db              # persist the DB on a named volume
+
+  # --- Backend (Express API) -------------------------------------------------
+  backend:
+    image: ghcr.io/axlothecook/create-resume-backend:latest   # pulled from GHCR
+    restart: unless-stopped
+    env_file: .env                       # MONGO_URI, CLIENT_ORIGIN, SESSION_SECRET, NODE_ENV, PORT
+    depends_on:
+      - mongo
+
+  # --- Frontend (static Vite SPA served by nginx) ----------------------------
+  frontend:
+    image: ghcr.io/axlothecook/create-resume-frontend:latest  # pulled from GHCR
+    restart: unless-stopped
+    depends_on:
+      - backend
+    # No host port published — the Cloudflare Tunnel reaches the frontend by its
+    # SERVICE NAME over the internal Compose network (frontend:80). Add a
+    # "ports: 8080:80" mapping only if you want LAN access for debugging.
+
+  # --- Cloudflare Tunnel (cloudflared) ---------------------------------------
+  # Connects the Pi OUTBOUND to Cloudflare's edge so resume.axlothecook.com reaches
+  # the frontend (and api.resume.axlothecook.com reaches the backend) — no open
+  # ports / no static IP needed. Routing (hostname -> service) is configured in the
+  # Cloudflare Zero Trust dashboard ("dashboard-managed" tunnel); the container only
+  # needs the tunnel TOKEN. In the dashboard add TWO public hostnames on THIS tunnel:
+  #   resume.axlothecook.com      -> HTTP -> frontend:80
+  #   api.resume.axlothecook.com  -> HTTP -> backend:3006
+  # (Services are reached by their SERVICE NAME over the internal Compose network.)
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run    # `run` starts the tunnel; --no-autoupdate
+                                           # keeps the container stable (upgrade by
+                                           # pulling a newer image instead).
+    environment:
+      # Token from the Zero Trust dashboard, kept in .env (gitignored). Passing it
+      # via env (not --token on the CLI) keeps it out of the process list.
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    depends_on:
+      - frontend
+      - backend
+
+volumes:
+  mongo-data:
