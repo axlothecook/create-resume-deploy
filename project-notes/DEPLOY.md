@@ -61,9 +61,9 @@ Same values as gaming-shop — the Pi + tailnet + deploy key are shared:
 |--------|-------|
 | `TS_OAUTH_CLIENT_ID` | Tailscale OAuth client ID |
 | `TS_OAUTH_SECRET` | Tailscale OAuth secret (`tskey-client-...`) |
-| `PI_TAILSCALE_IP` | the Pi's tailnet IP (gaming-shop note had `100.97.123.51` — re-confirm) |
-| `PI_USER` | `axel` |
-| `PI_SSH_KEY` | full contents of the CI private deploy key (`~/.ssh/gameshop_ci_key`) |
+| `PI_TAILSCALE_IP` | the Pi's tailnet IP (gaming-shop note had `<PI_TAILSCALE_IP>` — re-confirm) |
+| `PI_USER` | the Pi's SSH username |
+| `PI_SSH_KEY` | full contents of the CI private deploy key (`~/.ssh/<CI_SSH_KEY>`) |
 
 (The same key/OAuth already work for gaming-shop, so this is mostly copy-paste.)
 
@@ -96,7 +96,7 @@ Same values as gaming-shop — the Pi + tailnet + deploy key are shared:
 
 ```sh
 # SSH to the Pi (over Tailscale)
-ssh -i ~/.ssh/gameshop_ci_key axel@100.97.123.51
+ssh -i ~/.ssh/<CI_SSH_KEY> <PI_USER>@<PI_TAILSCALE_IP>
 
 # from ~/create-resume-deploy on the Pi:
 docker compose -f docker-compose.prod.yml ps              # container status

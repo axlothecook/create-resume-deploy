@@ -186,7 +186,7 @@ working on both repos.
 
 **The 5 GitHub secrets** that power `deploy-to-pi` (same values as gaming-shop, since
 the Pi/tailnet/key are shared): `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`,
-`PI_TAILSCALE_IP` (`100.97.123.51`), `PI_USER` (`axel`), `PI_SSH_KEY`.
+`PI_TAILSCALE_IP` (`<PI_TAILSCALE_IP>`), `PI_USER` (`<PI_USER>`), `PI_SSH_KEY`.
 
 ---
 
