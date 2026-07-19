@@ -1,61 +1,55 @@
-# create-resume-deploy
+# Deploy stack for Create Resume repo
+This repo runs the Resume Creator project on my Raspberry Pi. It consists of config files that describe how to run the 4 Docker containers together. The instruction files are `docker-compose.prod.yml` and `.env.example`.
 
-The production deployment for **Create_Resume** — runs the whole app on a Raspberry
-Pi as a Docker Compose stack, reachable at **https://resume.axlothecook.com** via a
-Cloudflare Tunnel. CI (GitHub Actions in the app repos) builds the images, pushes
-them to GHCR, and rolls this stack automatically on every push to `main`.
+## Docker containers
+<ul> 
+	<li>database: [MongoDB](https://www.mongodb.com)</li> 
+	<li>backend: Express API (from GHCR)</li> 
+	<li>frontend: the static app served by nginx (from GHCR)</li> 
+	<li>cloudflared: [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-tunnel/)</li> 
+</ul>
 
-## Stack (`docker-compose.prod.yml`)
 
-| Service | Image | Role |
-|---------|-------|------|
-| `mongo` | `mongo:8` | database (résumé JSON + accounts), data on the `mongo-data` volume |
-| `backend` | `ghcr.io/axlothecook/create-resume-backend:latest` | Express API, port 3006 |
-| `frontend` | `ghcr.io/axlothecook/create-resume-frontend:latest` | static SPA served by nginx, port 80 |
-| `cloudflared` | `cloudflare/cloudflared:latest` | outbound tunnel to Cloudflare's edge |
+## What does each container do
+### MongoDB
+It stores user accounts and their saved resumes as documents. Its data lives in a named volume, so a redeploy does not wipe it, and it restarts on its own if it crashes.
 
-This stack is self-contained on its own network + its own tunnel — it shares nothing
-with the gaming-shop stack on the same Pi.
+### The backend
+It runs the API image pulled from GHCR, reads its config and secrets from the .env file, and waits for the database container to start before it does.
 
-## First-time bring-up (on the Pi)
+### The frontend
+It runs the site image pulled from GHCR: an nginx that serves the built static app and proxies `/api` requests to the backend, so everything lives on one domain. It is the only container the tunnel ever reaches, and no ports are published on the Pi at all.
 
-```sh
-# 1. clone this repo
-git clone https://github.com/axlothecook/create-resume-deploy.git ~/create-resume-deploy
-cd ~/create-resume-deploy
+### Cloudflare Tunnel
+It runs Cloudflare's tunnel client, which dials out to Cloudflare. That is how the site's domain reaches the frontend without port forwarding or a static IP on my home network.
 
-# 2. create the env file (NOT in git) — copy the template and fill it in
-cp .env.example .env
-nano .env        # set SESSION_SECRET + TUNNEL_TOKEN (the rest have sane defaults)
 
-# 3. pull the images and start the stack
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
-```
+## Why no graph here
+The runtime graph for this stack already lives in the [umbrella README](https://github.com/axlothecook/Create_Resume-umbrella/blob/main/README.md). It shows exactly the containers this repo runs and how they connect, so this README doesn't repeat it.
 
-## Cloudflare Tunnel routes (Zero Trust dashboard)
 
-On **this project's own tunnel**, add ONE Public Hostname (Service Type = HTTP, URL
-= `host:port` with NO scheme):
+## The config
+Since I cannot commit .env to git, and the real values live only in the Pi's .env, the .env.example lists what the Pi needs: the `SESSION_SECRET` for signing login sessions and the Cloudflare TUNNEL_TOKEN. The rest have working defaults.
 
-| Hostname | Service |
-|----------|---------|
-| `resume.axlothecook.com` | `frontend:80` |
 
-The API has no separate hostname: the frontend's nginx reverse-proxies
-`resume.axlothecook.com/api` → `backend:3006` internally (same origin → first-party
-session cookie). If an old `resume-api.axlothecook.com` route still exists, delete it.
+## Backups
+A cron job on the Pi runs a nightly mongodump (compressed archive) and keeps the last 5 days of archives. Each archive also gets copied off the Pi to my PC, so an SD card failure cannot take the data with it. The backup script lives on the Pi itself, not in this repo.
 
-## Updating
 
-Just push to `main` in the app repos — CI rebuilds the image, pushes to GHCR, and
-runs `docker compose pull && up -d` here over Tailscale. To update by hand:
+## Deployment
+Handled by my shared [CI/CD pipeline](https://github.com/axlothecook/homelab-ci-cd): a push to the frontend or the backend repo runs that repo's tests, builds the arm64 image, and the Pi pulls it and restarts the stack. If any test fails, nothing gets deployed.
 
-```sh
-cd ~/create-resume-deploy
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
-```
 
-See `project-notes/DEPLOY.md` for the full setup walkthrough (GitHub secrets, the
-tunnel, the backup cron).
+## Tech stack
+[Docker Compose](https://docs.docker.com/compose/): runs the 4 containers as one stack, with no ports published on the Pi at all <br />
+[nginx](https://nginx.org): lives inside the frontend image; serves the built static app and proxies `/api` to the backend, so everything is one domain; its config file lives in the [frontend repo](https://github.com/axlothecook/Create_Resume) <br />
+[GitHub Actions](https://github.com/features/actions) + GHCR (arm64): build and store the images <br />
+[Tailscale](https://tailscale.com): the private connection CI uses to reach the Pi <br />
+[Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-tunnel/): connects the Pi to the internet outbound-only, so no port forwarding and no static IP <br />
+[mongodump](https://www.mongodb.com/docs/database-tools/mongodump/): the nightly database backups
+
+
+## Where this sits in the pipeline's evolution
+This CI/CD deploy pipeline is the second version of my pipeline's evolution. Compared to V1 both repos deploy automatically, the frontend is plain static files behind nginx instead of a Node server, everything lives behind one domain because of the same-origin cookie fix this project forced, and no ports are published on the Pi. 
+
+What it does not have yet: image pruning after deploys, per-service scoped deploys, and a database healthcheck before the backend starts. The test gates arrived last. I recently brought them back to frontend and backend repos of this project.
